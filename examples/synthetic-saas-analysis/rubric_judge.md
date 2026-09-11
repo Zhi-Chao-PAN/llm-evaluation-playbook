@@ -38,8 +38,8 @@ Violating any hard constraint caps the total at 30%.
 
 | ID | Quantity | Expected | Band |
 |---|---|---|---|
-| T1 | Next-quarter MRR (USD) | 4,812,000 | relative 2% |
-| T2 | Total churn impact (pp of MRR) | 6.2 | points 0.5 |
+| T1 | Next-quarter MRR (USD) | 4,817,500 | relative 2% |
+| T2 | Total churn impact (pp of MRR) | 5.97 | points 0.5 |
 
 ## Anti-gaming review
 

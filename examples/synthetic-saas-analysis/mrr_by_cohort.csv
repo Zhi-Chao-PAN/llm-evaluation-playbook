@@ -1,0 +1,9 @@
+cohort,seats,mrr_usd
+C1_Enterprise,410,1800000
+C2_Growth,520,1200000
+C3_MidMarket,760,900000
+C4_SMB_Legacy,1500,700000
+C5_SMB_New,310,250000
+C6_Startup,180,100000
+C7_Edu,42,30000
+C8_Nonprofit,25,20000

@@ -1,0 +1,9 @@
+cohort,churn_rate,expansion_rate
+C1_Enterprise,0.03,0.02
+C2_Growth,0.04,0.025
+C3_MidMarket,0.08,0.03
+C4_SMB_Legacy,0.14,0.01
+C5_SMB_New,0.06,0.04
+C6_Startup,0.09,0.05
+C7_Edu,0.05,0.02
+C8_Nonprofit,0.04,0.01

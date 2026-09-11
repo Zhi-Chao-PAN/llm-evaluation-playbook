@@ -37,5 +37,8 @@ Predicted failure modes:
 ## Packaging checklist
 
 - [x] Judge assets carry `_judge` suffix; packaging excludes `*_judge*`
-- [x] Gold values (4,812,000 / 6.2 pp) grepped across agent bundle — absent
+- [x] Gold values (4,817,500 / 5.97 pp) grepped across agent bundle — absent
 - [x] Every tolerance spec exercised with one PASS and one FAIL case
+  (`answers_demo.jsonl`; third line demonstrates a FAIL: 5,100,000 is 5.9% off,
+  outside the 2% band)
+- [x] Whole package validated with `python tools/playbook_check.py examples/synthetic-saas-analysis`
