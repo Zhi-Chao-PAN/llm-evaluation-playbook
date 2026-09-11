@@ -9,11 +9,18 @@ Implements the band types described in docs/02-numeric-tolerances.md:
     interval   low <= answer <= high
     set        answer is an exact member of values
 
+Spec-validation mode: omit --answer (or use "answer": null in batch mode)
+to validate the spec structure only — useful for CI and packaging checks.
+
 Exit codes: 0 = pass, 1 = fail, 2 = usage/spec error.
 
 Usage:
     python tools/tolerance_check.py \
         --expected 12.4 --spec '{"type":"points","value":0.5}' --answer 12.8
+
+    # spec definition only (no answer yet)
+    python tools/tolerance_check.py \
+        --expected 12.4 --spec '{"type":"points","value":0.5}'
 
     # batch mode: one JSON object per line on stdin
     echo '{"id":"Q1","expected":1250,"spec":{"type":"relative","value":0.02},"answer":1280}' \
@@ -23,6 +30,27 @@ Usage:
 import argparse
 import json
 import sys
+
+VALID_TYPES = {"absolute", "relative", "points", "interval", "set"}
+REQUIRED_KEYS = {
+    "absolute": ("value",),
+    "relative": ("value",),
+    "points": ("value",),
+    "interval": ("low", "high"),
+    "set": ("values",),
+}
+
+
+def spec_problems(spec) -> list:
+    """Return a list of structural problems with a tolerance spec."""
+    if not isinstance(spec, dict):
+        return [f"spec must be an object, got {type(spec).__name__}"]
+    t = spec.get("type")
+    if t not in VALID_TYPES:
+        return [f"unknown tolerance type: {t!r}"]
+    missing = [k for k in REQUIRED_KEYS[t] if k not in spec]
+    return [f"spec type '{t}' requires '{k}'" for k in missing]
+
 
 
 def check_one(expected: float, spec: dict, answer: float) -> dict:
@@ -86,33 +114,60 @@ def main(argv=None) -> int:
                 continue
             item = json.loads(line)
             total += 1
+            sid = item.get("id", "?")
             try:
-                r = check_one(
-                    _parse_number(item["expected"], "expected"),
-                    item["spec"],
-                    _parse_number(item["answer"], "answer"),
-                )
+                expected = _parse_number(item["expected"], "expected")
             except (KeyError, ValueError) as e:
-                print(f"ERROR  {item.get('id', '?')}: {e}")
+                print(f"ERROR  {sid}: {e}")
+                failed += 1
+                continue
+            problems = spec_problems(item.get("spec"))
+            if problems:
+                print(f"BAD-SPEC  {sid}: " + "; ".join(problems))
+                failed += 1
+                continue
+            if item.get("answer") is None:
+                print(f"SPEC-OK  {sid}: type={item['spec']['type']} (definition only, no answer)")
+                continue
+            try:
+                r = check_one(expected, item["spec"], _parse_number(item["answer"], "answer"))
+            except ValueError as e:
+                print(f"ERROR  {sid}: {e}")
                 failed += 1
                 continue
             status = "PASS" if r["pass"] else "FAIL"
             if not r["pass"]:
                 failed += 1
-            print(f"{status}  {item.get('id', '?')}: {r['band']}")
+            print(f"{status}  {sid}: {r['band']}")
         print(f"\n{total - failed}/{total} passed")
         return 0 if failed == 0 else 1
 
-    if not (args.expected and args.spec and args.answer):
+    if not (args.expected and args.spec):
         parser.print_help()
         return 2
 
     try:
         expected = _parse_number(args.expected, "--expected")
-        answer = _parse_number(args.answer, "--answer")
         spec = json.loads(args.spec)
+    except (ValueError, json.JSONDecodeError) as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+    problems = spec_problems(spec)
+    if problems:
+        for p in problems:
+            print(f"error: {p}", file=sys.stderr)
+        return 2
+
+    # Spec-validation mode: no answer given, structure check only.
+    if args.answer is None:
+        print(f"SPEC-OK  type={spec['type']} (definition only, no answer)")
+        return 0
+
+    try:
+        answer = _parse_number(args.answer, "--answer")
         result = check_one(expected, spec, answer)
-    except (ValueError, KeyError, json.JSONDecodeError) as e:
+    except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
 
