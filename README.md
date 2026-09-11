@@ -1,5 +1,7 @@
 # LLM Evaluation Playbook
 
+[![CI](https://github.com/Zhi-Chao-PAN/llm-evaluation-playbook/actions/workflows/ci.yml/badge.svg)](https://github.com/Zhi-Chao-PAN/llm-evaluation-playbook/actions/workflows/ci.yml)
+
 A field-tested playbook for designing LLM evaluation tasks — three-tier rubrics, machine-checkable tolerances, contamination control, and large-scale feedback quality management.
 
 Distilled from ~6 months of hands-on freelance work designing evaluation tasks for frontier LLM / agent products (30+ evaluation batches; 23k+ valid human-feedback items produced in a peak month at 99.1% validity). All examples in this repo are **synthetic** — no client data, prompts, or rubrics are reproduced here.
@@ -36,26 +38,51 @@ docs/
   04-multi-turn-design.md      Canonical prior outputs, curveball turns, re-baselining
   05-feedback-quality.md       Validity taxonomy + process for 10k+ item/month feedback
   06-long-horizon-agents.md    Checkpoint rubrics for long-running agent tasks
+  07-llm-as-judge.md           Tiered arbitration, judge failure modes, calibration
 templates/
   task-spec-template.md        Fillable task specification
   rubric-template.md           Fillable three-tier rubric
   submission-checklist.md      Pre-submission QA checklist (the one I actually use)
 tools/
+  playbook_check.py            One-shot validator for a whole task package
   rubric_lint.py               Flags vague, unscoreable language in rubrics
   tolerance_check.py           Validates numeric answers against tolerance specs
-  test_tools.py                Unit tests for both tools
+  test_tools.py                Unit tests for all three tools
 examples/
-  synthetic-saas-analysis/     A fully fictional end-to-end example (spec + rubric)
+  synthetic-saas-analysis/     A fictional end-to-end package: spec, rubric,
+                               reference answer, data CSVs, tolerance specs,
+                               and demo answers (passes playbook_check)
+```
+
+## How the pieces fit
+
+```mermaid
+flowchart LR
+    A["Task spec<br/>scenario + inputs + namespaces"] --> B["Rubric draft<br/>zero-score first (docs/01)"]
+    B --> C{"rubric_lint.py"}
+    C -->|findings| B
+    C -->|clean| D["Tolerance specs<br/>+ one PASS and one FAIL case (docs/02)"]
+    D --> E["Contamination check<br/>agent vs judge namespace (docs/03)"]
+    E --> F{"playbook_check.py<br/>whole package"}
+    F -->|errors| B
+    F -->|clean| G["Ship / submit<br/>(docs/05, 06, 07 at scale)"]
 ```
 
 ## Quickstart
 
 ```bash
+# One-shot validation of a complete task package
+python tools/playbook_check.py examples/synthetic-saas-analysis
+
 # Lint a rubric draft for vague language
 python tools/rubric_lint.py templates/rubric-template.md
 
 # Check a numeric answer against a tolerance spec
-python tools/tolerance_check.py --expected 1250000 --spec '{"type":"relative","value":0.02}' --answer 1275000
+python tools/tolerance_check.py --expected 4817500 \
+  --spec '{"type":"relative","value":0.02}' --answer 4890000
+
+# Batch mode (one JSON object per line) — see the demo answers in the example
+cat examples/synthetic-saas-analysis/answers_demo.jsonl | python tools/tolerance_check.py --batch
 
 # Run the test suite
 python tools/test_tools.py

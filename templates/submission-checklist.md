@@ -37,3 +37,11 @@ The final gate before a task ships. Ten minutes here prevents the two most commo
 - [ ] Zip contents listed and eyeballed before sending
 - [ ] Version number in the task spec changelog
 - [ ] Deliverable inventory stated (what "done" means, in files)
+- [ ] `python tools/playbook_check.py <package>` exits clean
+
+## LLM pre-screening (if used — see docs/07)
+
+- [ ] Judge calibrated on 30–50 double-scored items; agreement logged
+- [ ] Verdicts are criterion-by-criterion with evidence quotes
+- [ ] Judge never overrides Tier-0 tolerance checks
+- [ ] 5–10% blind re-arbitration sample scheduled for drift detection
