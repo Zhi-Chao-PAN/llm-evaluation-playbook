@@ -1,0 +1,4 @@
+# Tolerance specs for SYNTH-SaaS-001 (judge asset) — fictional numbers.
+# Format consumed by tools/tolerance_check.py --batch
+{"id": "T1-next-quarter-mrr", "expected": 4812000, "spec": {"type": "relative", "value": 0.02}, "answer": null}
+{"id": "T2-churn-impact-pp", "expected": 6.2, "spec": {"type": "points", "value": 0.5}, "answer": null}
