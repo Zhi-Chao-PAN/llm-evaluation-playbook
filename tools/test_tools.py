@@ -74,6 +74,103 @@ class ToleranceCheckTests(unittest.TestCase):
         r = self._check(100, {"type": "nope", "value": 1}, 100)
         self.assertEqual(r.returncode, 2)
 
+    def test_spec_validation_mode_single(self):
+        # No --answer: structure check only.
+        r = run_tool("tolerance_check.py",
+                     "--expected", "4817500",
+                     "--spec", '{"type":"relative","value":0.02}')
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("SPEC-OK", r.stdout)
+        # Structurally invalid spec fails even without an answer.
+        r2 = run_tool("tolerance_check.py",
+                      "--expected", "100",
+                      "--spec", '{"type":"interval","low":1}')
+        self.assertEqual(r2.returncode, 2)
+
+    def test_spec_validation_mode_batch(self):
+        lines = "\n".join([
+            json.dumps({"id": "T1", "expected": 100, "spec": {"type": "absolute", "value": 5}, "answer": None}),
+            json.dumps({"id": "T2", "expected": 100, "spec": {"type": "set", "values": [1, 2]}, "answer": 2}),
+        ])
+        r = run_tool("tolerance_check.py", "--batch", stdin=lines)
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("SPEC-OK  T1", r.stdout)
+        self.assertIn("PASS  T2", r.stdout)
+        self.assertIn("2/2 passed", r.stdout)
+
+
+EXAMPLE_PACKAGE = Path(__file__).resolve().parent.parent / "examples" / "synthetic-saas-analysis"
+
+
+class PlaybookCheckTests(unittest.TestCase):
+    def test_example_package_valid(self):
+        r = run_tool("playbook_check.py", str(EXAMPLE_PACKAGE))
+        self.assertEqual(r.returncode, 0, r.stdout)
+        self.assertIn("Package clean", r.stdout)
+
+    def test_example_package_strict_fails_on_warning(self):
+        r = run_tool("playbook_check.py", str(EXAMPLE_PACKAGE), "--strict")
+        # The example rubric intentionally quotes a vague phrase in its
+        # anti-gaming section, which lints as a warning.
+        self.assertEqual(r.returncode, 1)
+
+    def test_broken_package_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            pkg = Path(td)
+            (pkg / "task-spec.md").write_text(
+                "# Task Spec — TEST\n\n"
+                "## Inputs (agent namespace)\n\n"
+                "| Asset | Format | Notes |\n|---|---|---|\n| data.csv | CSV | test |\n\n"
+                "## Judge assets (judge namespace — never ship to agent)\n\n"
+                "| Asset | Notes |\n|---|---|\n"
+                "| rubric_judge.md | test |\n| tolerances_judge.json | test |\n",
+                encoding="utf-8")
+            # Weights sum to 55 but declare 100; references T1 with no spec.
+            (pkg / "rubric_judge.md").write_text(
+                "# Rubric\n\n"
+                "## Tier 2 — Soft constraints (weights sum to 100)\n\n"
+                "| ID | Dimension | Weight | 0 anchor | 0.5 anchor | 1.0 anchor |\n"
+                "|---|---|---|---|---|---|\n"
+                "| S1 | Chain | 30 | numbers appear without derivation | "
+                "steps shown | every number traceable |\n"
+                "| S2 | Assumption | 25 | none stated | stated | "
+                "applied and sensitivity noted |\n\n"
+                "## Tolerance specs\n\n"
+                "| ID | Quantity | Expected | Band |\n|---|---|---|---|\n"
+                "| T1 | Total | 100 | relative 2% |\n",
+                encoding="utf-8")
+            (pkg / "tolerances_judge.json").write_text(
+                '{"id": "T9-total", "expected": 100, "spec": {"type": "relative", "value": 0.02}}',
+                encoding="utf-8")
+            r = run_tool("playbook_check.py", str(pkg))
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("weights sum to 55", r.stdout)
+            self.assertIn("T1", r.stdout)
+
+    def test_contamination_detected(self):
+        with tempfile.TemporaryDirectory() as td:
+            pkg = Path(td)
+            (pkg / "task-spec.md").write_text(
+                "# Task Spec — TEST\n\n"
+                "## Inputs (agent namespace)\n\n"
+                "| Asset | Format | Notes |\n|---|---|---|\n"
+                "| reference_answer_judge.md | MD | oops |\n\n"
+                "## Judge assets (judge namespace)\n\n"
+                "| Asset | Notes |\n|---|---|\n"
+                "| rubric_judge.md | test |\n",
+                encoding="utf-8")
+            (pkg / "rubric_judge.md").write_text(
+                "# Rubric\n\n## Tier 2 — Soft constraints (weights sum to 100)\n\n"
+                "| ID | Dimension | Weight | 0 anchor | 1.0 anchor |\n|---|---|---|---|---|\n"
+                "| S1 | Chain | 100 | numbers appear without derivation | every number traceable |\n",
+                encoding="utf-8")
+            (pkg / "tolerances_judge.json").write_text(
+                '{"id": "T9", "expected": 1, "spec": {"type": "absolute", "value": 1}}',
+                encoding="utf-8")
+            r = run_tool("playbook_check.py", str(pkg))
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("contamination", r.stdout)
+
 
 class RubricLintTests(unittest.TestCase):
     def _lint(self, text):
