@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run unit tests
+        run: python tools/test_tools.py
+
+      - name: Validate example task package
+        run: python tools/playbook_check.py examples/synthetic-saas-analysis
+
+      - name: Validate tolerance spec definitions
+        run: |
+          python tools/tolerance_check.py \
+            --expected 4817500 --spec '{"type":"relative","value":0.02}'
+          python tools/tolerance_check.py \
+            --expected 5.97 --spec '{"type":"points","value":0.5}'
