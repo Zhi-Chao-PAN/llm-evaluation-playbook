@@ -90,6 +90,13 @@ python tools/test_tools.py
 
 No third-party dependencies — Python 3.8+ standard library only.
 
+Tolerance specifications require finite numeric bounds, non-negative tolerances,
+and ordered intervals (`low <= high`). Booleans, NaN and infinity are rejected.
+The CLI returns `0` for a pass, `1` for a valid comparison outside the band, and
+`2` for invalid input/specifications (including an empty batch). Batch mode
+reports malformed rows and continues checking subsequent records; any input
+error makes the overall exit status `2`.
+
 ## Lessons learned (short version)
 
 - The rubric is the product. Reviewers argue less when hard constraints are binary and soft constraints carry explicit weights.

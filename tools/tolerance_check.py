@@ -29,6 +29,7 @@ Usage:
 
 import argparse
 import json
+import math
 import sys
 
 VALID_TYPES = {"absolute", "relative", "points", "interval", "set"}
@@ -41,20 +42,49 @@ REQUIRED_KEYS = {
 }
 
 
+def _finite_number(value) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
 def spec_problems(spec) -> list:
-    """Return a list of structural problems with a tolerance spec."""
+    """Validate the values as well as the shape of a tolerance spec."""
     if not isinstance(spec, dict):
         return [f"spec must be an object, got {type(spec).__name__}"]
     t = spec.get("type")
-    if t not in VALID_TYPES:
+    if not isinstance(t, str) or t not in VALID_TYPES:
         return [f"unknown tolerance type: {t!r}"]
     missing = [k for k in REQUIRED_KEYS[t] if k not in spec]
-    return [f"spec type '{t}' requires '{k}'" for k in missing]
-
+    if missing:
+        return [f"spec type '{t}' requires '{k}'" for k in missing]
+    if t in {"absolute", "relative", "points"}:
+        if not _finite_number(spec["value"]) or spec["value"] < 0:
+            return ["value must be a finite, non-negative number"]
+    elif t == "interval":
+        if not all(_finite_number(spec[k]) for k in ("low", "high")):
+            return ["interval bounds must be finite numbers"]
+        if spec["low"] > spec["high"]:
+            return ["interval low must not exceed high"]
+    elif t == "set":
+        values = spec["values"]
+        if not isinstance(values, list) or not values:
+            return ["values must be a non-empty list"]
+        if any(not isinstance(v, str) and not _finite_number(v) for v in values):
+            return ["set members must be strings or finite numbers"]
+    return []
 
 
 def check_one(expected: float, spec: dict, answer: float) -> dict:
     """Return {'pass': bool, 'diff': float, 'band': str} for a single answer."""
+    problems = spec_problems(spec)
+    if problems:
+        raise ValueError("; ".join(problems))
+    expected = _parse_number(expected, "expected")
+    answer = _parse_number(answer, "answer")
     t = spec.get("type")
     if t == "absolute":
         diff = abs(expected - answer)
@@ -63,6 +93,8 @@ def check_one(expected: float, spec: dict, answer: float) -> dict:
     elif t == "relative":
         diff = abs(expected - answer)
         limit = spec["value"] * abs(expected)
+        if not math.isfinite(limit):
+            raise ValueError("relative tolerance produces a non-finite bound")
         ok = diff <= limit
         band = f"|{expected} - {answer}| <= {spec['value']}*|{expected}| ({limit:.6g})"
     elif t == "points":
@@ -90,10 +122,15 @@ def check_one(expected: float, spec: dict, answer: float) -> dict:
 
 
 def _parse_number(value, name: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be numeric, not boolean")
     try:
-        return float(value)
-    except (TypeError, ValueError):
-        raise ValueError(f"{name} must be numeric, got: {value!r}")
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"{name} must be a finite number, got: {value!r}")
+    if not math.isfinite(number):
+        raise ValueError(f"{name} must be finite, got: {value!r}")
+    return number
 
 
 def main(argv=None) -> int:
@@ -107,24 +144,35 @@ def main(argv=None) -> int:
 
     if args.batch:
         failed = 0
+        errors = 0
         total = 0
-        for line in sys.stdin:
+        for line_number, line in enumerate(sys.stdin, 1):
             line = line.strip()
             if not line:
                 continue
-            item = json.loads(line)
             total += 1
+            try:
+                item = json.loads(line)
+                if not isinstance(item, dict):
+                    raise ValueError("each row must be a JSON object")
+            except (ValueError, json.JSONDecodeError) as e:
+                print(f"ERROR  line {line_number}: {e}")
+                failed += 1
+                errors += 1
+                continue
             sid = item.get("id", "?")
             try:
                 expected = _parse_number(item["expected"], "expected")
             except (KeyError, ValueError) as e:
                 print(f"ERROR  {sid}: {e}")
                 failed += 1
+                errors += 1
                 continue
             problems = spec_problems(item.get("spec"))
             if problems:
                 print(f"BAD-SPEC  {sid}: " + "; ".join(problems))
                 failed += 1
+                errors += 1
                 continue
             if item.get("answer") is None:
                 print(f"SPEC-OK  {sid}: type={item['spec']['type']} (definition only, no answer)")
@@ -134,13 +182,17 @@ def main(argv=None) -> int:
             except ValueError as e:
                 print(f"ERROR  {sid}: {e}")
                 failed += 1
+                errors += 1
                 continue
             status = "PASS" if r["pass"] else "FAIL"
             if not r["pass"]:
                 failed += 1
             print(f"{status}  {sid}: {r['band']}")
         print(f"\n{total - failed}/{total} passed")
-        return 0 if failed == 0 else 1
+        if total == 0:
+            print("error: batch contains no records", file=sys.stderr)
+            return 2
+        return 2 if errors else (0 if failed == 0 else 1)
 
     if not (args.expected and args.spec):
         parser.print_help()
