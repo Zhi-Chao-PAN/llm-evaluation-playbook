@@ -74,6 +74,57 @@ class ToleranceCheckTests(unittest.TestCase):
         r = self._check(100, {"type": "nope", "value": 1}, 100)
         self.assertEqual(r.returncode, 2)
 
+    def test_invalid_spec_values_are_rejected_without_tracebacks(self):
+        invalid = [
+            {"type": "relative", "value": -0.1},
+            {"type": "absolute", "value": "invalid"},
+            {"type": "points", "value": True},
+            {"type": "absolute", "value": float("inf")},
+            {"type": "interval", "low": 10, "high": 1},
+            {"type": "interval", "low": float("nan"), "high": 1},
+            {"type": "set", "values": []},
+            {"type": "set", "values": "123"},
+            {"type": "set", "values": [True]},
+            {"type": "set", "values": [[1]]},
+            {"type": []},
+        ]
+        for spec in invalid:
+            with self.subTest(spec=spec):
+                result = self._check(100, spec, 100)
+                self.assertEqual(result.returncode, 2, result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_non_finite_operands_and_overflow_are_rejected(self):
+        for value in ("NaN", "Infinity", "-Infinity", "1e999"):
+            with self.subTest(value=value):
+                result = self._check(100, {"type": "absolute", "value": 1}, value)
+                self.assertEqual(result.returncode, 2)
+                result = self._check(value, {"type": "absolute", "value": 1}, 100)
+                self.assertEqual(result.returncode, 2)
+        result = self._check(1e308, {"type": "relative", "value": 10}, 100)
+        self.assertEqual(result.returncode, 2)
+
+    def test_batch_recovers_after_invalid_rows(self):
+        good = {"id": "valid", "expected": 10,
+                "spec": {"type": "absolute", "value": 0}, "answer": 10}
+        bad_boolean = dict(good, expected=True)
+        result = run_tool("tolerance_check.py", "--batch", stdin="\n".join([
+            "{broken", "[]", "null", json.dumps(bad_boolean), json.dumps(good),
+        ]))
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("PASS  valid", result.stdout)
+        self.assertIn("1/5 passed", result.stdout)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_empty_batch_is_not_a_successful_evaluation(self):
+        result = run_tool("tolerance_check.py", "--batch", stdin="\n ")
+        self.assertEqual(result.returncode, 2)
+
+    def test_direct_calls_validate_specs(self):
+        from tolerance_check import check_one
+        with self.assertRaises(ValueError):
+            check_one(100, {"type": "relative", "value": -0.1}, 100)
+
     def test_spec_validation_mode_single(self):
         # No --answer: structure check only.
         r = run_tool("tolerance_check.py",
